@@ -109,9 +109,11 @@ function edd_initialize_paymentwall_lib() {
 
 	require_once plugin_dir_path(__FILE__) . 'paymentwall-php/lib/paymentwall.php';
 
-	Paymentwall_Base::setApiType(Paymentwall_Base::API_GOODS);
-	Paymentwall_Base::setAppKey($edd_options['paymentwall_application_key']);
-	Paymentwall_Base::setSecretKey($edd_options['paymentwall_secret_key']);
+    Paymentwall_Config::getInstance()->set(array(
+        'api_type' => Paymentwall_Config::API_GOODS,
+        'public_key' => $edd_options['paymentwall_application_key'],
+        'private_key' => $edd_options['paymentwall_secret_key']
+    ));
 }
 
 // redirect user to the payment page
@@ -159,8 +161,7 @@ function edd_process_paymentwall_purchase( $purchase_data ) {
         	array(
         		'success_url' => add_query_arg( 'payment-confirmation', 'paymentwall', get_permalink( $edd_options['success_page'] ) ),
         		'email' => $purchase_data['user_email'],
-        		'country_code' => 'US',
-        		'sign_version' => Paymentwall_Base::SIGNATURE_VERSION_3,
+        		'sign_version' => Paymentwall_Signature_Abstract::VERSION_THREE,
 				'integration_module' => 'easy_digital_downloads'
     		)
     	);
@@ -184,6 +185,9 @@ add_action( 'edd_gateway_paymentwall', 'edd_process_paymentwall_purchase' );
 // process pingback
 function edd_paymentwall_pingback() {
 	edd_initialize_paymentwall_lib();
+    if (isset($_GET['edd-listener']) && $_GET['edd-listener'] != '') {
+        unset($_GET['edd-listener']);
+    }
 	$pingback = new Paymentwall_Pingback($_GET, $_SERVER['REMOTE_ADDR']);
 	if ($pingback->validate()) {
 		$payment_id = $pingback->getProduct()->getId();

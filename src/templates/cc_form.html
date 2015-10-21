@@ -1,0 +1,109 @@
+<fieldset id="edd_cc_fields" class="edd-do-validate">
+    <span><legend>Credit Card Info</legend></span>
+
+    <p id="edd-card-number-wrap">
+        <label for="card_number" class="edd-label">
+            Card Number
+            <span class="edd-required-indicator">*</span>
+            <span class="card-type"></span>
+        </label>
+        <span class="edd-description">The (typically) 16 digits on the front of your credit card.</span>
+        <input type="text" autocomplete="off" name="card_number" id="card_number" class="card-number edd-input required"
+               placeholder="Card number" data-brick="card-number"/>
+    </p>
+
+    <p class="card-expiration">
+        <label for="card_exp_month" class="edd-label">
+            Expiration (MM/YY)
+            <span class="edd-required-indicator">*</span>
+        </label>
+        <span class="edd-description">The date your credit card expires, typically on the front of the card.</span>
+        <select id="card_exp_month" name="card_exp_month"
+                class="card-expiry-month edd-select edd-select-small required" data-brick="card-expiration-month">
+            {{months}}
+        </select>
+        <span class="exp-divider"> / </span>
+        <select id="card_exp_year" name="card_exp_year" class="card-expiry-year edd-select edd-select-small required"
+                data-brick="card-expiration-year">
+            {{years}}
+        </select>
+    </p>
+
+    <p id="edd-card-cvc-wrap">
+        <label for="card_cvc" class="edd-label">
+            CVC
+            <span class="edd-required-indicator">*</span>
+        </label>
+        <span class="edd-description">The 3 digit (back) or 4 digit (front) value on your card.</span>
+        <input type="text" size="4" maxlength="4" autocomplete="off" name="card_cvc" id="card_cvc"
+               class="card-cvc edd-input required"
+               placeholder="Security code" data-brick="card-cvv"/>
+
+        <input type="hidden" name="brick_token" id="hidden-brick-token"/>
+        <input type="hidden" name="brick_fingerprint" id="hidden-brick-fingerprint"/>
+    </p>
+</fieldset>
+
+<script type="text/javascript">
+    function errorHandler(error) {
+
+        if(jQuery('.edd-alert-error').length <= 0){
+            jQuery('<div/>').addClass('edd_errors edd-alert edd-alert-error').insertBefore(jQuery('#edd_purchase_submit'));
+        }else{
+            jQuery('.edd-alert-error').html('');
+        }
+
+        var templError = jQuery('#brick-error-template').html();
+
+        if (typeof error == "string") {
+            jQuery('.edd-alert-error').append(templError.replace('{{#content#}}', error));
+        } else if (typeof error == 'object') {
+            for (it in error) {
+                jQuery('.edd-alert-error').append(templError.replace('{{#content#}}', error[it]));
+            }
+        }
+        jQuery('.edd-alert-error').show();
+    }
+
+    jQuery.getScript("https://api.paymentwall.com/brick/brick.1.3.js", function (data, textStatus, jqxhr) {
+        var brick = new Brick({
+            public_key: '{{public_key}}',
+            form: {formatter: true}
+        }, 'custom');
+
+        jQuery('#edd-purchase-button').unbind('click.brickForm').bind('click.brickForm', function (e) {
+            var that = jQuery(this);
+
+            if(that.attr('tokenized') == 'true'){
+                that.removeAttr('tokenized');
+                return true;
+            }
+
+            brick.tokenizeCard({
+                card_number: jQuery('#card_number').val(),
+                card_expiration_month: jQuery('#card_exp_month').val(),
+                card_expiration_year: jQuery('#card_exp_year').val(),
+                card_cvv: jQuery('#card_cvc').val()
+            }, function (response) {
+
+                jQuery('#edd-purchase-button').attr('disabled', false);
+
+                if (response.type == 'Error') {
+                    errorHandler(response.error);
+                } else {
+
+                    jQuery('#brick-errors').html('');
+                    jQuery('#hidden-brick-token').val(response.token);
+                    jQuery('#hidden-brick-fingerprint').val(Brick.getFingerprint());
+                    that.attr('tokenized', 'true');
+                    that.click();
+                }
+            });
+
+            return false;
+        });
+    });
+</script>
+<div id="brick-error-template" style="display: none">
+    <p class="edd_error"><strong>Error</strong>: {{#content#}}</p>
+</div>

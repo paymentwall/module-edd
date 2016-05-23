@@ -3,7 +3,7 @@
  * Plugin Name: Paymentwall for Easy Digital Downloads
  * Plugin URI: http://www.paymentwall.com/en/documentation/Easy-Digital-Downloads/1741?source=edd
  * Description: Allows to use Paymentwall as a payment gateway for Easy Digital Downloads
- * Version: 1.1.0
+ * Version: 1.1.1
  * Author: Paymentwall Integration Team
  * Author URI: https://www.paymentwall.com/?source=edd
  * License: The MIT License (MIT)

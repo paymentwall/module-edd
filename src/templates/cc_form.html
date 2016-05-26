@@ -1,6 +1,5 @@
 <fieldset id="edd_cc_fields" class="edd-do-validate">
     <span><legend>Credit Card Info</legend></span>
-
     <p id="edd-card-number-wrap">
         <label for="card_number" class="edd-label">
             Card Number
@@ -46,10 +45,12 @@
 
 <script type="text/javascript">
     function errorHandler(error) {
-
-        if(jQuery('.edd-alert-error').length <= 0){
+        if (undefined == error || '' == error) {
+            return false;
+        }
+        if (jQuery('.edd-alert-error').length <= 0) {
             jQuery('<div/>').addClass('edd_errors edd-alert edd-alert-error').insertBefore(jQuery('#edd_purchase_submit'));
-        }else{
+        } else {
             jQuery('.edd-alert-error').html('');
         }
 
@@ -65,7 +66,7 @@
         jQuery('.edd-alert-error').show();
     }
 
-    jQuery.getScript("https://api.paymentwall.com/brick/brick.1.3.js", function (data, textStatus, jqxhr) {
+    jQuery.getScript("https://api.paymentwall.com/brick/brick.1.4.js", function (data, textStatus, jqxhr) {
         var brick = new Brick({
             public_key: '{{public_key}}',
             form: {formatter: true}
@@ -74,7 +75,7 @@
         jQuery('#edd-purchase-button').unbind('click.brickForm').bind('click.brickForm', function (e) {
             var that = jQuery(this);
 
-            if(that.attr('tokenized') == 'true'){
+            if (that.attr('tokenized') == 'true') {
                 that.removeAttr('tokenized');
                 return true;
             }
@@ -91,7 +92,6 @@
                 if (response.type == 'Error') {
                     errorHandler(response.error);
                 } else {
-
                     jQuery('#brick-errors').html('');
                     jQuery('#hidden-brick-token').val(response.token);
                     jQuery('#hidden-brick-fingerprint').val(Brick.getFingerprint());

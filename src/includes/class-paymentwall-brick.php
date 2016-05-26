@@ -1,4 +1,5 @@
 <?php
+session_start();
 
 /**
  * Paymentwall for Easy Digital Downloads
@@ -10,6 +11,9 @@ class edd_paymentwall_brick extends edd_paymentwall_abstract
 {
     protected $gateway_id = 'brick';
 
+    const ORDER_COMPLETE = 'publish';
+    const ORDER_PENDING = 'pending';
+
     public function __construct()
     {
         parent::__construct();
@@ -18,6 +22,10 @@ class edd_paymentwall_brick extends edd_paymentwall_abstract
     public function init()
     {
         parent::init();
+        $this->init_paymentwall_config();
+        if (!empty($_GET['secure'])) {
+            $this->confirm_3ds($_POST);
+        }
     }
 
     /**
@@ -49,8 +57,6 @@ class edd_paymentwall_brick extends edd_paymentwall_abstract
      */
     public function process_purchase($purchase_data)
     {
-        $this->init_paymentwall_config();
-
         // Collect payment data
         $payment_data = array(
             'price' => $purchase_data['price'],
@@ -75,43 +81,26 @@ class edd_paymentwall_brick extends edd_paymentwall_abstract
             // Problems? send back
             edd_send_back_to_checkout('?payment-mode=' . $purchase_data['post_data']['edd-gateway']);
         } else {
-
-            $cardInfo = array(
-                'email' => $purchase_data['post_data']['edd_email'],
-                'amount' => $purchase_data['price'],
-                'currency' => edd_get_currency(),
-                'token' => $purchase_data['post_data']['brick_token'],
-                'fingerprint' => $purchase_data['post_data']['brick_fingerprint'],
-                'description' => edd_get_purchase_summary($payment_data, false)
-            );
-
             $charge = new Paymentwall_Charge();
-            $charge->create($cardInfo);
+            $cardInfo = $this->prepare_card_info($purchase_data, $payment_data);
+
+            $charge->create(array_merge($cardInfo, $this->getExtraData($payment_id)));
             $response = $charge->getPublicData();
+            $rawResponse = json_decode($charge->getRawResponseData(), true);
 
-            if ($charge->isSuccessful()) {
-                if ($charge->isCaptured()) {
-                    // deliver a product
-                    edd_update_payment_status($payment_id, 'publish');
-                    edd_insert_payment_note($payment_id, 'Payment approved!, Transaction Id #' . $charge->getId());
-                } elseif ($charge->isUnderReview()) {
-                    // decide on risk charge
-                    edd_update_payment_status($payment_id, 'pending');
-                    edd_insert_payment_note($payment_id, 'Payment under review!, Transaction Id #' . $charge->getId());
-                }
-
-                // Empty the shopping cart
-                edd_empty_cart();
-                edd_send_to_success_page();
+            if ($charge->isSuccessful() && empty($rawResponse['secure'])) {
+                $this->payment_success($charge, $payment_id);
+            } elseif (!empty($rawResponse['secure'])) {
+                $_SESSION['3dsecure'] = array(
+                    'cardInfo' => $cardInfo,
+                    'paymentData' => $payment_data,
+                    'paymentId' => $payment_id
+                );
+                echo $this->get_template('3ds.html', array(
+                    '3ds' => $rawResponse['secure']['formHTML']
+                ));
             } else {
-                $errors = json_decode($response, true);
-                edd_set_error('brick_error_' . $errors['error']['code'], __($errors['error']['message'], PW_EDD_TEXT_DOMAIN));
-
-                // Record the error
-                edd_record_gateway_error(__('Payment Error', PW_EDD_TEXT_DOMAIN), $errors['error']['message'], $payment_id);
-                edd_insert_payment_note($payment_id, 'Error: ' . __($errors['error']['message']));
-                // Problems? send back
-                edd_send_back_to_checkout('?payment-mode=' . $purchase_data['post_data']['edd-gateway']);
+                $this->payment_error($response, $payment_id);
             }
         }
     }
@@ -131,7 +120,6 @@ class edd_paymentwall_brick extends edd_paymentwall_abstract
         for ($i = date('Y'); $i <= date('Y') + 20; $i++) {
             $years .= '<option value="' . $i . '">' . substr($i, 2) . '</option>';
         }
-
         do_action('edd_before_cc_fields');
         // register the action to remove default CC form
         echo $this->get_template('cc_form.html', array(
@@ -140,9 +128,10 @@ class edd_paymentwall_brick extends edd_paymentwall_abstract
             'public_key' => Paymentwall_Config::getInstance()->getPublicKey()
         ));
         do_action('edd_after_cc_fields');
+
     }
 
-    private function prepare_card_info($purchase_data, $payment)
+    private function prepare_card_info($purchase_data, $payment_data)
     {
         return array(
             'email' => $purchase_data['post_data']['edd_email'],
@@ -150,8 +139,79 @@ class edd_paymentwall_brick extends edd_paymentwall_abstract
             'currency' => edd_get_currency(),
             'token' => $purchase_data['post_data']['brick_token'],
             'fingerprint' => $purchase_data['post_data']['brick_fingerprint'],
-            'description' => 'Order #' . $payment
+            'description' => edd_get_purchase_summary($payment_data, false)
         );
     }
 
+    public function confirm_3ds($postData)
+    {
+        require_once(ABSPATH . WPINC . "/pluggable.php");
+
+        global $wp_rewrite;
+        $wp_rewrite = new WP_Rewrite();
+        $charge = new Paymentwall_Charge();
+
+        $secureData = $_SESSION['3dsecure'];
+        EDD()->session->set('edd_purchase', $secureData['paymentData']);
+        $payment_id = $secureData['paymentId'];
+        $cardInfo = $secureData['cardInfo'];
+        $cardInfo['charge_id'] = $postData['brick_charge_id'];
+        $cardInfo['secure_token'] = $postData['brick_secure_token'];
+
+        $charge->create($cardInfo);
+        $response = $charge->getPublicData();
+
+        if ($charge->isSuccessful()) {
+            $this->payment_success($charge, $payment_id);
+        } else {
+            $this->payment_error($response, $payment_id, 'confirm3ds');
+        }
+    }
+
+    private function payment_success($charge, $paymentId)
+    {
+        $paymentStatus = $paymentNote = '';
+        $transactionId = $charge->getId();
+        if ($charge->isCaptured()) {
+            $paymentStatus = self::ORDER_COMPLETE;
+            $paymentNote = 'Payment approved !, Transaction Id #' . $transactionId;
+        } elseif ($charge->isUnderReview()) {
+            $paymentStatus = self::ORDER_PENDING;
+            $paymentNote = 'Payment under review !, Transaction Id #' . $transactionId;
+        }
+        edd_update_payment_status($paymentId, $paymentStatus);
+        edd_insert_payment_note($paymentId, $paymentNote);
+        edd_set_payment_transaction_id( $paymentId, $transactionId);
+        edd_empty_cart();
+        unset($_SESSION['3dsecure']);
+        edd_send_to_success_page();
+    }
+
+    private function payment_error($response, $payment_id, $payment_mode = '')
+    {
+        $errors = json_decode($response, true);
+        $error = __($errors['error']['message']);
+        if (empty($_GET['secure'])) {
+            edd_set_error('brick_error_' . $errors['error']['code'], __($errors['error']['message'], PW_EDD_TEXT_DOMAIN));
+        }
+        edd_insert_payment_note($payment_id, 'Error: ' . $error);
+        edd_record_gateway_error(__('Payment Error', PW_EDD_TEXT_DOMAIN), $errors['error']['message'], $payment_id);
+        if ('confirm3ds' == $payment_mode) {
+            header("Location:" . edd_get_failed_transaction_uri());
+            die();
+        } else {
+            edd_send_back_to_checkout('?payment-mode=' . $this->gateway_id);
+        }
+    }
+
+    private function getExtraData($payment_id)
+    {
+        $customerId = edd_get_payment_customer_id($payment_id);
+        $customerId = !empty($customerId) ? $customerId : $_SERVER['REMOTE_ADDR'];
+        return array(
+            'integration_module' => 'edd',
+            'uid' => $customerId,
+            'secure_redirect_url' => edd_get_current_page_url() . 'checkout/?payment-mode=brick&secure=1'
+        );
+    }
 }

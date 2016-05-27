@@ -2,8 +2,8 @@
 Contributors: Paymentwall
 Tags: payment, paymentgateway, edd, ecommerce, digital download, Easy Digital Downloads, paymentgateways, brick, creditcard
 Requires at least: 3.9.2 & EDD 2.1 or later
-Tested up to: 4.3.1 & EDD 2.4.7
-Stable tag: 1.1.0
+Tested up to: 4.5.2 & EDD 2.5.16
+Stable tag: 1.1.1
 License: The MIT License (MIT)
 
 Official Paymentwall module for WordPress EDD.
@@ -35,6 +35,10 @@ View our full installation guide: <https://www.paymentwall.com/us/documentation/
 1. Screenshot 1 - Paymentwall Settings Page
 
 == Changelog ==
+= v1.1.1 [27/05/2016] =
+* Support Wordpress 4.5.2
+* Update 3D Secure for Brick
+
 = v1.1.0 [08/10/2015] =
 * Support Wordpress 4.3.1
 * Update latest lib
